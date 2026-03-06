@@ -1,9 +1,6 @@
 import authService from './authService';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
-
-//Interfaces 
-
 export interface Incident {
     id: string;
     incident_type: string;
@@ -21,9 +18,6 @@ interface IncidentResponse {
     count: number;
     data: Incident[];
 }
-
-// Service 
-
 class AdminService {
     private baseUrl: string;
     public allIncidents: Incident[] = [];
@@ -32,7 +26,6 @@ class AdminService {
         this.baseUrl = `${API_BASE_URL}/admin`;
     }
 
-    /** Auth headers */
     private async getHeaders(): Promise<HeadersInit> {
         const token = await authService.getIdToken();
         return {
@@ -41,7 +34,6 @@ class AdminService {
         };
     }
 
-    /** Fetch all incidents */
     async getIncidents(): Promise<Incident[]> {
         try {
             const res = await fetch(`${this.baseUrl}/incidents`, {
@@ -59,8 +51,22 @@ class AdminService {
         }
     }
 
+    async getVerifications(): Promise<Incident[]> {
+        try {
+            const res = await fetch(`${this.baseUrl}/verifications`, {
+                method: 'GET',
+                headers: await this.getHeaders(),
+            });
+            if (!res.ok) throw new Error('Failed to fetch verifications');
+            const result: IncidentResponse = await res.json();
+            return result.data;
+        } catch (error) {
+            console.error('Verifications fetch error:', error);
+            throw error;
+        }
+    }
 
-    /** Update incident status */
+
     async updateIncidentStatus(incidentId: string, status: string): Promise<Incident> {
         try {
             const res = await fetch(`${this.baseUrl}/incidents/${incidentId}/status`, {
@@ -73,6 +79,35 @@ class AdminService {
         } catch (error) {
             console.error('Update incident status error:', error);
             throw error;
+        }
+    }
+
+    async assignTeamToIncident(incidentId: string, teamId: string): Promise<void> {
+        try {
+            const res = await fetch(`${this.baseUrl}/incidents/${incidentId}/assign`, {
+                method: 'POST',
+                headers: await this.getHeaders(),
+                body: JSON.stringify({ teamId }),
+            });
+            if (!res.ok) throw new Error('Failed to assign team to incident');
+        } catch (error) {
+            console.error('Assign team error:', error);
+            throw error;
+        }
+    }
+    async deleteIncident(incidentId: string): Promise<void> {
+        try {
+            const res = await fetch(`${this.baseUrl}/incidents/${incidentId}`, {
+                method: 'DELETE',
+                headers: await this.getHeaders(),
+            });
+            if (!res.ok) {
+                console.warn('DELETE endpoint failed, falling back to status update');
+                await this.updateIncidentStatus(incidentId, 'deleted');
+            }
+        } catch (error) {
+            console.error('Delete incident error:', error);
+            await this.updateIncidentStatus(incidentId, 'deleted');
         }
     }
 }

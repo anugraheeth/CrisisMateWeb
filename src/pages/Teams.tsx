@@ -10,9 +10,6 @@ const Teams: React.FC = () => {
     const [teams, setTeams] = useState<RescueTeam[]>([]);
     const [loading, setLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<string | null>(null);
-    const [resolutionRequests, setResolutionRequests] = useState<ResolutionRequest[]>([]);
-    const [dispatchRequests, setDispatchRequests] = useState<DispatchRequest[]>([]);
-
     // Fetch Data
     useEffect(() => {
         const fetchTeams = async () => {
@@ -26,15 +23,6 @@ const Teams: React.FC = () => {
             }
         };
         fetchTeams();
-
-        // Listeners for Navbar badges
-        const unsubResolutions = rescueTeamService.onResolutionRequestsChange(setResolutionRequests);
-        const unsubDispatchReqs = rescueTeamService.onDispatchRequestsChange(setDispatchRequests);
-
-        return () => {
-            unsubResolutions();
-            unsubDispatchReqs();
-        };
     }, []);
 
     const handleDeleteTeam = async (teamId: string) => {
@@ -68,8 +56,6 @@ const Teams: React.FC = () => {
         <div className="h-screen bg-slate-50 flex flex-col font-sans text-ink-900 overflow-hidden">
             <AdminNavbar
                 title="Rescue Team Hub"
-                resolutionCount={resolutionRequests.length}
-                dispatchCount={dispatchRequests.length}
                 activePage="teams"
             />
 
@@ -164,6 +150,12 @@ const Teams: React.FC = () => {
                                                     <span className="text-ink-400">UNIT CAPACITY</span>
                                                     <span className="text-ink-900">{team.members?.length || 0} Operatives</span>
                                                 </div>
+                                                {team.phone && (
+                                                    <div className="flex justify-between items-center text-[10px] font-medium">
+                                                        <span className="text-ink-400">LEAD CONTACT</span>
+                                                        <a href={`tel:${team.phone}`} className="text-brand-600 font-bold tracking-wide hover:underline">{team.phone}</a>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <div className="mt-6 flex gap-2">

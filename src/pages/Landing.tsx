@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ref, getDownloadURL } from 'firebase/storage';
+import { storage } from '../config/firebase';
 import Navbar from '../components/common/Navbar';
 import Footer from '../components/common/Footer';
 import FeatureCard from '../components/common/FeatureCard';
@@ -7,6 +9,77 @@ import FeatureCard from '../components/common/FeatureCard';
 interface LandingProps {
     onLoginSuccess: () => void;
 }
+
+const GITHUB_APK_URL = 'https://github.com/Anugraheeth/CrisisMate/releases/latest/download/CrisisMate.apk';
+
+const DownloadModal = ({ onClose }: { onClose: () => void }) => {
+    // Note: Change the GitHub URL above to match your actual repository
+    const apkUrl = GITHUB_APK_URL;
+
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(apkUrl)}&size=200x200&margin=10&color=1A1F2E&bgcolor=FFFFFF`;
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={onClose}
+        >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-ink-900/60 backdrop-blur-sm" />
+
+            {/* Modal card */}
+            <div
+                className="relative bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center gap-5 animate-fade-in-up"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Close button */}
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-surface-100 hover:bg-surface-200 transition-colors text-ink-500"
+                >
+                    <span className="material-symbols-outlined text-lg">close</span>
+                </button>
+
+                {/* Icon + heading */}
+                <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-3xl text-brand-600">android</span>
+                </div>
+                <div className="text-center">
+                    <h3 className="text-xl font-extrabold text-ink-900 mb-1">Get Crisis Mate</h3>
+                    <p className="text-sm text-ink-500 leading-relaxed">
+                        Scan the QR with your phone camera to download directly, or tap the button below.
+                    </p>
+                </div>
+
+                {/* QR Code area */}
+                <div className="p-3 bg-white border-2 border-surface-200 rounded-2xl shadow-soft w-[204px] h-[204px] flex items-center justify-center">
+                    <img
+                        src={qrUrl}
+                        alt="Scan to download Crisis Mate APK"
+                        width={180}
+                        height={180}
+                        className="rounded-lg"
+                    />
+                </div>
+
+                <p className="text-xs text-ink-400 font-medium uppercase tracking-wider">— or —</p>
+
+                {/* Direct download */}
+                <button
+                    onClick={() => { window.location.href = apkUrl; }}
+                    className="group w-full flex items-center justify-center gap-2.5 px-6 py-3.5 bg-brand-600 text-white font-semibold rounded-2xl hover:bg-brand-700 transition-all duration-200 hover:shadow-glow active:scale-[0.97] text-sm"
+                >
+                    <span className="material-symbols-outlined text-lg">download</span>
+                    Download APK
+                    <span className="material-symbols-outlined text-base group-hover:translate-y-0.5 transition-transform">south</span>
+                </button>
+
+                <p className="text-[11px] text-ink-400 text-center leading-relaxed">
+                    Android only &bull; Enable &quot;Install from unknown sources&quot; in settings before installing.
+                </p>
+            </div>
+        </div>
+    );
+};
 
 // Animates a number from 0 to target
 function useCountUp(target: number, duration = 2000) {
@@ -35,6 +108,7 @@ function useCountUp(target: number, duration = 2000) {
 /* component */
 const Landing = ({ onLoginSuccess }: LandingProps) => {
     const navigate = useNavigate();
+    const [showDownload, setShowDownload] = useState(false);
 
     const teamsRef = useCountUp(240);
     const incidentsRef = useCountUp(1847);
@@ -312,7 +386,7 @@ const Landing = ({ onLoginSuccess }: LandingProps) => {
                                 </span>
                             </button>
                             <button
-                                onClick={onLoginSuccess}
+                                onClick={() => setShowDownload(true)}
                                 className="flex items-center gap-2 px-8 py-4 text-white/90 font-semibold rounded-2xl border border-white/20 hover:bg-white/10 transition-all duration-200 active:scale-[0.97] text-sm"
                             >
                                 <span className="material-symbols-outlined text-lg">
@@ -326,6 +400,8 @@ const Landing = ({ onLoginSuccess }: LandingProps) => {
             </section>
 
             <Footer />
+
+            {showDownload && <DownloadModal onClose={() => setShowDownload(false)} />}
         </div>
     );
 };

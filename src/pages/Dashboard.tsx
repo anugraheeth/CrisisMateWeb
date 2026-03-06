@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminNavbar from '../components/common/AdminNavbar';
 import AuthService from '../services/authService';
 import adminService, { Incident } from '../services/adminService';
-import rescueTeamService, { RescueTeam, ResolutionRequest, DispatchRequest } from '../services/rescueTeamService';
+import rescueTeamService, { RescueTeam } from '../services/rescueTeamService';
 
 const Dashboard: React.FC = () => {
     const mapRef = useRef<HTMLDivElement>(null);
@@ -19,7 +19,8 @@ const Dashboard: React.FC = () => {
         activeIncidents: 0,
         critical: 0,
         teamsDeployed: 0,
-        onStandby: 0
+        onStandby: 0,
+        totalTeams: 0
     });
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -36,14 +37,6 @@ const Dashboard: React.FC = () => {
     // Track which team was dispatched to each incident
     const [dispatchedTeams, setDispatchedTeams] = useState<{ [incidentId: string]: RescueTeam & { distance: number } }>({});
     const [infoIncidentId, setInfoIncidentId] = useState<string | null>(null);
-
-    // Resolution & Dispatch requests
-    const [resolutionRequests, setResolutionRequests] = useState<ResolutionRequest[]>([]);
-    const [showResolutionPanel, setShowResolutionPanel] = useState(false);
-    const [confirmingRequestId, setConfirmingRequestId] = useState<string | null>(null);
-
-    const [dispatchRequests, setDispatchRequests] = useState<DispatchRequest[]>([]);
-    const [showDispatchPanel, setShowDispatchPanel] = useState(false);
 
     const dropdownRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
@@ -101,8 +94,17 @@ const Dashboard: React.FC = () => {
 
         const fetchIntial = async () => {
             try {
-                const data = await adminService.getIncidents();
-                processIncidentsData(data);
+                const [incidentData, teamsData] = await Promise.all([
+                    adminService.getIncidents(),
+                    rescueTeamService.getAllTeams()
+                ]);
+
+                processIncidentsData(incidentData);
+
+                setStats(prev => ({
+                    ...prev,
+                    totalTeams: teamsData.length
+                }));
             } catch (err) {
                 console.error('Initial fetch failed:', err);
             }
@@ -112,14 +114,16 @@ const Dashboard: React.FC = () => {
         // Listeners
         const unsubIncidents = rescueTeamService.onIncidentsChange((data: any) => processIncidentsData(data));
         const unsubDispatches = rescueTeamService.onDispatchesChange(setDispatchedTeams as any);
-        const unsubResolutions = rescueTeamService.onResolutionRequestsChange(setResolutionRequests);
-        const unsubDispatchReqs = rescueTeamService.onDispatchRequestsChange(setDispatchRequests);
+
+        // Listen to teams to update total count dynamically
+        const unsubTeams = rescueTeamService.onTeamsChange((teamsData: RescueTeam[]) => {
+            setStats(prev => ({ ...prev, totalTeams: teamsData.length }));
+        });
 
         return () => {
             unsubIncidents();
             unsubDispatches();
-            unsubResolutions();
-            unsubDispatchReqs();
+            unsubTeams();
         };
     }, []);
 
@@ -282,27 +286,11 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    const handleResolutionConfirm = async (req: ResolutionRequest) => {
-        setConfirmingRequestId(req.id);
-        try {
-            await adminService.updateIncidentStatus(req.incidentId, 'Resolved');
-            await rescueTeamService.confirmResolution(req.id, req.teamId);
-        } catch (err) {
-            console.error('Resolution failed:', err);
-        } finally {
-            setConfirmingRequestId(null);
-        }
-    };
-
 
     return (
         <div className="h-screen bg-slate-50 flex flex-col font-sans text-ink-900 overflow-hidden">
             <AdminNavbar
                 title="Admin Dashboard"
-                resolutionCount={resolutionRequests.length}
-                dispatchCount={dispatchRequests.length}
-                onResolutionClick={() => setShowResolutionPanel(!showResolutionPanel)}
-                onDispatchClick={() => setShowDispatchPanel(!showDispatchPanel)}
                 activePage="dashboard"
             />
 
@@ -313,7 +301,7 @@ const Dashboard: React.FC = () => {
                     {[
                         { label: 'Active Incidents', value: stats.activeIncidents, sub: `+${stats.critical} Critical`, color: 'text-ink-900' },
                         { label: 'Deploys Today', value: stats.activeIncidents + 12, sub: '98% Success', color: 'text-ink-900' },
-                        { label: 'Rescue Teams', value: '24', sub: 'Across 8 Sectors', color: 'text-ink-900' },
+                        { label: 'Rescue Teams', value: stats.totalTeams, sub: 'Across Sectors', color: 'text-ink-900' },
                         { label: 'Uptime', value: '99.9%', sub: 'Command Center', color: 'text-brand-600' },
                     ].map((stat, i) => (
                         <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -548,85 +536,6 @@ const Dashboard: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Resolution Requests Panel */}
-                {showResolutionPanel && resolutionRequests.length > 0 && (
-                    <div className="fixed top-24 right-6 w-96 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[90] overflow-hidden animate-in slide-in-from-right-4 duration-300">
-                        <div className="p-5 border-b border-slate-50 flex items-center justify-between">
-                            <h3 className="font-bold text-ink-900 text-sm">Resolution Requests</h3>
-                            <button onClick={() => setShowResolutionPanel(false)} className="text-ink-400 hover:text-ink-600">
-                                <span className="material-symbols-outlined text-lg">close</span>
-                            </button>
-                        </div>
-                        <div className="max-h-[400px] overflow-y-auto">
-                            {resolutionRequests.map(req => (
-                                <div key={req.id} className="p-5 border-b border-slate-50 last:border-none">
-                                    <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
-                                            <span className="material-symbols-outlined text-xl">verified</span>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-ink-900">{req.teamName}</p>
-                                            <p className="text-[10px] text-ink-500 font-medium">Reports resolved: {req.incidentType}</p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => handleResolutionConfirm(req)}
-                                        disabled={confirmingRequestId === req.id}
-                                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all disabled:opacity-50"
-                                    >
-                                        {confirmingRequestId === req.id ? 'Confirming...' : 'Approve Resolution'}
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Dispatch Requests Panel */}
-                {showDispatchPanel && dispatchRequests.length > 0 && (
-                    <div className="fixed top-24 right-6 w-96 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[90] overflow-hidden animate-in slide-in-from-right-4 duration-300">
-                        <div className="p-5 border-b border-slate-50 flex items-center justify-between">
-                            <h3 className="font-bold text-ink-900 text-sm">Dispatch Approvals</h3>
-                            <button onClick={() => setShowDispatchPanel(false)} className="text-ink-400 hover:text-ink-600">
-                                <span className="material-symbols-outlined text-lg">close</span>
-                            </button>
-                        </div>
-                        <div className="max-h-[400px] overflow-y-auto">
-                            {dispatchRequests.map(req => (
-                                <div key={req.id} className="p-5 border-b border-slate-50 last:border-none">
-                                    <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600">
-                                            <span className="material-symbols-outlined text-xl">help</span>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-ink-900">{req.teamName}</p>
-                                            <p className="text-[10px] text-ink-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Req assignment: {req.incidentId.slice(0, 12)}...</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={async () => {
-                                                await adminService.updateIncidentStatus(req.incidentId, 'Dispatched');
-                                                await rescueTeamService.respondToIncident(req.teamId, req.incidentId);
-                                                await rescueTeamService.markDispatchProcessed(req.id);
-                                            }}
-                                            className="flex-1 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
-                                        >
-                                            Approve
-                                        </button>
-                                        <button
-                                            onClick={async () => await rescueTeamService.markDispatchProcessed(req.id)}
-                                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-ink-600 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
-                                        >
-                                            Deny
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
                         </div>
                     </div>
                 )}

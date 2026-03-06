@@ -31,7 +31,6 @@ interface AuthUser {
 export type UserRole = 'admin' | 'team_leader';
 
 class AuthService {
-    /** Login user with email and password */
     async login(credentials: LoginCredentials): Promise<UserCredential> {
         try {
             return await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
@@ -41,7 +40,6 @@ class AuthService {
         }
     }
 
-    /** Register a new team leader account */
     async registerTeamLeader(data: RegisterData & { teamId?: string }): Promise<UserCredential> {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
@@ -54,7 +52,6 @@ class AuthService {
         }
     }
 
-    /** Get user role from Firestore */
     async getUserRole(): Promise<UserRole | null> {
         const user = this.getCurrentUser();
         if (!user) return null;
@@ -68,7 +65,6 @@ class AuthService {
         }
     }
 
-    /** Set user role in Firestore */
     async setUserRole(uid: string, role: UserRole, teamId?: string): Promise<void> {
         try {
             await setDoc(
@@ -82,7 +78,6 @@ class AuthService {
         }
     }
 
-    /** Logout current user */
     async logout(): Promise<void> {
         try {
             await signOut(auth);
@@ -92,12 +87,10 @@ class AuthService {
         }
     }
 
-    /** Get current authenticated user */
     getCurrentUser(): User | null {
         return auth.currentUser;
     }
 
-    /** Get current user's ID token */
     async getIdToken(): Promise<string | null> {
         const user = this.getCurrentUser();
         if (!user) return null;
@@ -109,17 +102,14 @@ class AuthService {
         }
     }
 
-    /** Check if user is authenticated */
     isAuthenticated(): boolean {
         return !!this.getCurrentUser();
     }
 
-    /** Listen to authentication state changes */
     onAuthStateChange(callback: (user: User | null) => void): () => void {
         return onAuthStateChanged(auth, callback);
     }
 
-    /** Get current user data in simplified format */
     getUserData(): AuthUser | null {
         const user = this.getCurrentUser();
         if (!user) return null;
@@ -131,7 +121,6 @@ class AuthService {
         };
     }
 
-    /** Get user-friendly error message from Firebase error code */
     private getErrorMessage(errorCode: string): string {
         const errorMessages: { [key: string]: string } = {
             'auth/invalid-email': 'Invalid email address',
@@ -146,6 +135,17 @@ class AuthService {
             'auth/network-request-failed': 'Network error. Check your connection',
         };
         return errorMessages[errorCode] || 'Authentication failed. Please try again';
+    }
+
+    async updateUserProfile(data: { displayName?: string; photoURL?: string }): Promise<void> {
+        const user = this.getCurrentUser();
+        if (!user) throw new Error('No user authenticated');
+        try {
+            await updateProfile(user, data);
+        } catch (error: any) {
+            console.error('Update profile error:', error);
+            throw new Error(this.getErrorMessage(error.code));
+        }
     }
 }
 

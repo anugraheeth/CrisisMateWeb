@@ -6,6 +6,14 @@ import TeamRegistration from './pages/TeamRegistration';
 import Dashboard from './pages/Dashboard';
 import Teams from './pages/Teams';
 import Incidents from './pages/Incidents';
+import Validation from './pages/Validation';
+import TeamDashboard from './pages/TeamDashboard';
+import TeamProfile from './pages/TeamProfile';
+import About from './pages/About';
+import Security from './pages/Security';
+import Legal from './pages/Legal';
+import Privacy from './pages/Privacy';
+import Procedures from './pages/Procedures';
 import AuthService from './services/authService';
 import { User } from 'firebase/auth';
 
@@ -17,30 +25,45 @@ function App() {
     );
 }
 
-// Protection Components 
-
-/** Redirects to dashboard if already logged in */
-const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+const PublicRoute = ({ children, userRole }: { children: React.ReactNode, userRole: 'admin' | 'team_leader' | null }) => {
     const user = AuthService.getCurrentUser();
-    return user ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+    if (user) {
+        if (userRole === 'admin') return <Navigate to="/dashboard" replace />;
+        if (userRole === 'team_leader') return <Navigate to="/team-dashboard" replace />;
+        // Default to team dashboard if role is missing but user is logged in
+        return <Navigate to="/team-dashboard" replace />;
+    }
+    return <>{children}</>;
 };
 
-/** Redirects to login if not authenticated */
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({ children, requiredRole, userRole }: { children: React.ReactNode, requiredRole?: 'admin' | 'team_leader', userRole: 'admin' | 'team_leader' | null }) => {
     const user = AuthService.getCurrentUser();
-    return user ? <>{children}</> : <Navigate to="/login" replace />;
-};
+    if (!user) return <Navigate to="/login" replace />;
 
-// App Routes 
+    if (requiredRole && userRole && requiredRole !== userRole) {
+        // User is logged in but doesn't have the right role, send them to their respective dashboard
+        if (userRole === 'admin') return <Navigate to="/dashboard" replace />;
+        if (userRole === 'team_leader') return <Navigate to="/team-dashboard" replace />;
+    }
+
+    return <>{children}</>;
+};
 
 const AppRoutes = () => {
     const navigate = useNavigate();
     const [initializing, setInitializing] = useState(true);
     const [user, setUser] = useState<User | null>(null);
+    const [userRole, setUserRole] = useState<'admin' | 'team_leader' | null>(null);
 
     useEffect(() => {
-        const unsubscribe = AuthService.onAuthStateChange((u) => {
+        const unsubscribe = AuthService.onAuthStateChange(async (u) => {
             setUser(u);
+            if (u) {
+                const role = await AuthService.getUserRole();
+                setUserRole(role);
+            } else {
+                setUserRole(null);
+            }
             setInitializing(false);
         });
         return unsubscribe;
@@ -57,33 +80,53 @@ const AppRoutes = () => {
         );
     }
 
-    const goDashboard = () => navigate('/dashboard');
+    const goDashboard = async () => {
+        const role = await AuthService.getUserRole();
+        if (role === 'admin') navigate('/dashboard');
+        else navigate('/team-dashboard');
+    };
 
     return (
         <Routes>
             <Route
                 path="/"
                 element={
-                    <PublicRoute>
+                    <PublicRoute userRole={userRole}>
                         <Landing onLoginSuccess={goDashboard} />
                     </PublicRoute>
                 }
             />
-            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/register-team" element={<PublicRoute><TeamRegistration /></PublicRoute>} />
+            <Route path="/login" element={<PublicRoute userRole={userRole}><Login /></PublicRoute>} />
+            <Route path="/register-team" element={<PublicRoute userRole={userRole}><TeamRegistration /></PublicRoute>} />
 
-            {/* Protected Admin Routes */}
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/teams" element={<ProtectedRoute><Teams /></ProtectedRoute>} />
-            <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
+            {/* Admin Only Routes */}
+            <Route path="/dashboard" element={<ProtectedRoute requiredRole="admin" userRole={userRole}><Dashboard /></ProtectedRoute>} />
+            <Route path="/teams" element={<ProtectedRoute requiredRole="admin" userRole={userRole}><Teams /></ProtectedRoute>} />
+            <Route path="/incidents" element={<ProtectedRoute requiredRole="admin" userRole={userRole}><Incidents /></ProtectedRoute>} />
+            <Route path="/validation" element={<ProtectedRoute requiredRole="admin" userRole={userRole}><Validation /></ProtectedRoute>} />
 
-    
+            {/* Team Leader Only Routes */}
+            <Route path="/team-dashboard" element={<ProtectedRoute requiredRole="team_leader" userRole={userRole}><TeamDashboard /></ProtectedRoute>} />
+            <Route path="/teamprofile" element={<ProtectedRoute requiredRole="team_leader" userRole={userRole}><TeamProfile /></ProtectedRoute>} />
+
+            <Route
+                path="/about"
+                element={
+                    <PublicRoute userRole={userRole}>
+                        <About />
+                    </PublicRoute>
+                }
+            />
+            <Route path="/security" element={<PublicRoute userRole={userRole}><Security /></PublicRoute>} />
+            <Route path="/legal" element={<PublicRoute userRole={userRole}><Legal /></PublicRoute>} />
+            <Route path="/privacy" element={<PublicRoute userRole={userRole}><Privacy /></PublicRoute>} />
+            <Route path="/docs" element={<PublicRoute userRole={userRole}><Procedures /></PublicRoute>} />
+
             <Route path="*" element={<PlaceholderPage />} />
         </Routes>
     );
 };
 
-/** Temporary placeholder for routes not yet built */
 const PlaceholderPage = () => (
     <div className="min-h-screen flex items-center justify-center bg-surface-50">
         <div className="text-center">

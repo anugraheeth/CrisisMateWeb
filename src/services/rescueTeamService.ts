@@ -113,6 +113,30 @@ class RescueTeamService {
         }
     }
 
+    /** Get nearby incidents from API */
+    async getNearbyIncidents(lat: number, lng: number, radiusKm: number = 50): Promise<NearbyIncident[]> {
+        try {
+            const token = await authService.getIdToken();
+            const response = await fetch(`${API_BASE_URL}/admin/incidents`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (!response.ok) throw new Error('Failed to fetch incidents');
+            const result = await response.json();
+            const allIncidents: NearbyIncident[] = result.data || [];
+            return allIncidents
+                .map(i => ({ ...i, distance: this.haversine(lat, lng, i.latitude, i.longitude) }))
+                .filter(i => i.distance! <= radiusKm)
+                .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+        } catch (error) {
+            console.error('Get nearby incidents error:', error);
+            return [];
+        }
+    }
+
     /** Mark team as responding */
     async respondToIncident(teamId: string, incidentId: string): Promise<void> {
         try {
@@ -135,6 +159,130 @@ class RescueTeamService {
         } catch (error) {
             console.error('Update team status error:', error);
             throw error;
+        }
+    }
+
+    /** Real-time listener: team data */
+    onTeamChange(teamId: string, callback: (team: RescueTeam | null) => void): () => void {
+        return onSnapshot(doc(db, 'teams', teamId), (snap) => {
+            callback(snap.exists() ? (snap.data() as RescueTeam) : null);
+        }, (e) => console.error('Team listener error:', e));
+    }
+
+    /** Update basic team info */
+    async updateTeamInfo(teamId: string, data: Partial<RescueTeam>): Promise<void> {
+        try {
+            await updateDoc(doc(db, 'teams', teamId), { ...data, updatedAt: new Date().toISOString() });
+        } catch (error) {
+            console.error('Update team info error:', error);
+            throw error;
+        }
+    }
+
+    /** Add new member to team */
+    async addMember(teamId: string, member: TeamMember): Promise<void> {
+        try {
+            await updateDoc(doc(db, 'teams', teamId), {
+                members: arrayUnion(member)
+            });
+        } catch (error) {
+            console.error('Add member error:', error);
+            throw error;
+        }
+    }
+
+    /** Update existing member */
+    async updateMember(teamId: string, oldMember: TeamMember, newMember: TeamMember): Promise<void> {
+        try {
+            // Firestore doesn't support direct index updates, so we remove and add
+            // This is safer than replacing the whole array if there are concurrent edits
+            await updateDoc(doc(db, 'teams', teamId), {
+                members: arrayRemove(oldMember)
+            });
+            await updateDoc(doc(db, 'teams', teamId), {
+                members: arrayUnion(newMember)
+            });
+        } catch (error) {
+            console.error('Update member error:', error);
+            throw error;
+        }
+    }
+
+    /** Delete member from team */
+    async deleteMember(teamId: string, member: TeamMember): Promise<void> {
+        try {
+            await updateDoc(doc(db, 'teams', teamId), {
+                members: arrayRemove(member)
+            });
+        } catch (error) {
+            console.error('Delete member error:', error);
+            throw error;
+        }
+    }
+
+    /** Request incident resolution */
+    async requestResolution(teamId: string, teamName: string, incidentId: string, incidentType: string): Promise<void> {
+        try {
+            await addDoc(collection(db, 'resolution_requests'), {
+                teamId,
+                teamName,
+                incidentId,
+                incidentType,
+                status: 'pending',
+                submittedAt: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Request resolution error:', error);
+            throw error;
+        }
+    }
+
+    async updateMembers(teamId: string, members: TeamMember[]): Promise<void> {
+        try {
+            await updateDoc(doc(db, 'teams', teamId), { members });
+        } catch (error) {
+            console.error('Update members error:', error);
+            throw error;
+        }
+    }
+
+    private haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371;
+        const toRad = (deg: number) => (deg * Math.PI) / 180;
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Get nearby teams sorted by status priority then distance */
+    async getNearbyTeams(lat: number, lng: number): Promise<(RescueTeam & { distance: number })[]> {
+        const statusPriority = (status: RescueTeam['status']): number => {
+            switch (status) {
+                case 'active': return 0;
+                case 'responding': return 1;
+                case 'on_scene': return 2;
+                default: return 3;
+            }
+        };
+
+        try {
+            const teams = await this.getAllTeams();
+            return teams
+                .filter(team => team.status !== 'inactive')
+                .map(team => ({
+                    ...team,
+                    distance: this.haversine(lat, lng, team.latitude, team.longitude)
+                }))
+                .sort((a, b) => {
+                    const aP = statusPriority(a.status);
+                    const bP = statusPriority(b.status);
+                    if (aP !== bP) return aP - bP;
+                    return a.distance - b.distance;
+                });
+        } catch (error) {
+            console.error('Get nearby teams error:', error);
+            return [];
         }
     }
 
@@ -225,6 +373,15 @@ class RescueTeamService {
             snap.forEach((d) => { i.push({ id: d.id, ...d.data() } as NearbyIncident); });
             cb(i);
         }, (e) => console.error('Incidents listener error:', e));
+    }
+
+    /** Teams */
+    onTeamsChange(cb: (t: RescueTeam[]) => void): () => void {
+        return onSnapshot(collection(db, 'teams'), (snap) => {
+            const t: RescueTeam[] = [];
+            snap.forEach((d) => { t.push({ id: d.id, ...d.data() } as RescueTeam); });
+            cb(t);
+        }, (e) => console.error('Teams listener error:', e));
     }
 }
 

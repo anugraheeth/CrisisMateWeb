@@ -23,7 +23,7 @@ const TeamRegistration = () => {
     const [error, setError] = useState('');
     const [step, setStep] = useState<1 | 2>(1);
 
-   
+
     const [teamName, setTeamName] = useState('');
     const [specialization, setSpecialization] = useState('General');
     const [phone, setPhone] = useState('');
@@ -42,6 +42,8 @@ const TeamRegistration = () => {
     const [latitude, setLatitude] = useState(0);
     const [longitude, setLongitude] = useState(0);
     const [locationStatus, setLocationStatus] = useState<'idle' | 'detecting' | 'done' | 'error'>('idle');
+    const [areaName, setAreaName] = useState('');
+    const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
     const detectLocation = () => {
         setLocationStatus('detecting');
@@ -51,11 +53,36 @@ const TeamRegistration = () => {
                     setLatitude(pos.coords.latitude);
                     setLongitude(pos.coords.longitude);
                     setLocationStatus('done');
+                    setError('');
                 },
                 () => setLocationStatus('error')
             );
         } else {
             setLocationStatus('error');
+        }
+    };
+
+    const searchLocation = async () => {
+        if (!areaName.trim()) return;
+        setIsSearchingLocation(true);
+        setLocationStatus('detecting');
+        setError('');
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(areaName)}`);
+            const data = await response.json();
+            if (data && data.length > 0) {
+                setLatitude(parseFloat(data[0].lat));
+                setLongitude(parseFloat(data[0].lon));
+                setLocationStatus('done');
+            } else {
+                setLocationStatus('error');
+                setError('Location not found. Please try a different name.');
+            }
+        } catch (err) {
+            setLocationStatus('error');
+            setError('Failed to search location.');
+        } finally {
+            setIsSearchingLocation(false);
         }
     };
 
@@ -200,8 +227,8 @@ const TeamRegistration = () => {
                             <div className="flex items-center gap-3">
                                 <div
                                     className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${step > 1
-                                            ? 'bg-green-50 text-success border border-green-200'
-                                            : 'bg-brand-600 text-white shadow-glow'
+                                        ? 'bg-green-50 text-success border border-green-200'
+                                        : 'bg-brand-600 text-white shadow-glow'
                                         }`}
                                 >
                                     {step > 1 ? (
@@ -216,8 +243,8 @@ const TeamRegistration = () => {
                                 />
                                 <div
                                     className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${step === 2
-                                            ? 'bg-brand-600 text-white shadow-glow'
-                                            : 'bg-surface-100 text-ink-400 border border-surface-200'
+                                        ? 'bg-brand-600 text-white shadow-glow'
+                                        : 'bg-surface-100 text-ink-400 border border-surface-200'
                                         }`}
                                 >
                                     2
@@ -244,6 +271,11 @@ const TeamRegistration = () => {
                                                 className="space-y-4"
                                                 onSubmit={(e) => {
                                                     e.preventDefault();
+                                                    if (locationStatus !== 'done') {
+                                                        setError('Please set a base location first (Detect or Search).');
+                                                        return;
+                                                    }
+                                                    setError('');
                                                     setStep(2);
                                                 }}
                                             >
@@ -359,38 +391,71 @@ const TeamRegistration = () => {
                                                 {/* Location */}
                                                 <div>
                                                     <label className={labelClass}>Base Location</label>
-                                                    <button
-                                                        type="button"
-                                                        onClick={detectLocation}
-                                                        className={`w-full border rounded-xl px-4 py-3 text-sm transition-all flex items-center gap-2.5 ${locationStatus === 'done'
+                                                    <div className="space-y-3">
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                className={`flex-1 !py-3 ${inputClass}`}
+                                                                placeholder="Enter area name (e.g. Kochi, Kerala)"
+                                                                value={areaName}
+                                                                onChange={(e) => setAreaName(e.target.value)}
+                                                                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), searchLocation())}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={searchLocation}
+                                                                disabled={isSearchingLocation}
+                                                                className="px-4 py-3 bg-surface-100 hover:bg-surface-200 text-ink-700 rounded-xl transition-colors border border-surface-200 disabled:opacity-50 flex items-center justify-center"
+                                                            >
+                                                                {isSearchingLocation ? (
+                                                                    <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                                                                ) : (
+                                                                    <span className="material-symbols-outlined text-sm">search</span>
+                                                                )}
+                                                            </button>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="h-px flex-1 bg-surface-200"></div>
+                                                            <span className="text-[10px] text-ink-400 font-bold uppercase tracking-widest">OR</span>
+                                                            <div className="h-px flex-1 bg-surface-200"></div>
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={detectLocation}
+                                                            className={`w-full border rounded-xl px-4 py-3 text-sm transition-all flex items-center gap-2.5 ${locationStatus === 'done'
                                                                 ? 'border-green-200 bg-green-50 text-success'
                                                                 : locationStatus === 'error'
                                                                     ? 'border-red-200 bg-red-50 text-danger'
                                                                     : 'border-surface-200 bg-surface-50 text-ink-500 hover:border-brand-300'
-                                                            }`}
-                                                    >
-                                                        <span
-                                                            className={`material-symbols-outlined text-lg ${locationStatus === 'detecting'
-                                                                    ? 'animate-spin'
-                                                                    : ''
                                                                 }`}
                                                         >
+                                                            <span
+                                                                className={`material-symbols-outlined text-lg ${locationStatus === 'detecting'
+                                                                    ? 'animate-spin'
+                                                                    : ''
+                                                                    }`}
+                                                            >
+                                                                {locationStatus === 'done'
+                                                                    ? 'check_circle'
+                                                                    : locationStatus === 'error'
+                                                                        ? 'error'
+                                                                        : locationStatus === 'detecting'
+                                                                            ? 'sync'
+                                                                            : 'my_location'}
+                                                            </span>
                                                             {locationStatus === 'done'
-                                                                ? 'check_circle'
-                                                                : locationStatus === 'error'
-                                                                    ? 'error'
-                                                                    : locationStatus === 'detecting'
-                                                                        ? 'sync'
-                                                                        : 'my_location'}
-                                                        </span>
-                                                        {locationStatus === 'done'
-                                                            ? `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`
-                                                            : locationStatus === 'detecting'
-                                                                ? 'Detecting...'
-                                                                : locationStatus === 'error'
-                                                                    ? 'Failed — Click to retry'
-                                                                    : 'Detect My Location'}
-                                                    </button>
+                                                                ? `${latitude.toFixed(4)}°, ${longitude.toFixed(4)}°`
+                                                                : locationStatus === 'detecting'
+                                                                    ? 'Detecting...'
+                                                                    : locationStatus === 'error'
+                                                                        ? 'Failed — Click to retry'
+                                                                        : 'Detect My Location'}
+                                                        </button>
+
+                                                        {error && <p className="text-xs text-danger mt-1">{error}</p>}
+                                                    </div>
                                                 </div>
 
                                                 {/* Next button */}
